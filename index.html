@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MQTT Chat Realtime</title>
+    <title>Anonymous Chat PENS LA</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
         * {
@@ -549,7 +549,7 @@
     <!-- Container Chat -->
     <div class="container">
         <div class="header">
-            <h1>💬 MQTT Chat</h1>
+            <h1>💬 Anonymous Chat PENS LA</h1>
             <div class="header-info">
                 <div class="status">
                     <span class="status-dot" id="statusDot"></span>
@@ -564,7 +564,7 @@
         </div>
 
         <div class="chat-area" id="chatArea">
-            <div class="system-message">Selamat datang di MQTT Chat Realtime</div>
+            <div class="system-message">Selamat datang di Anonymous Chat PENS LA</div>
         </div>
 
         <div class="input-area">
@@ -871,11 +871,23 @@
                     minute: '2-digit'
                 });
                 
+                let replyHtml = '';
+                if (data.replyTo) {
+                    replyHtml = `
+                        <div class="reply-preview">
+                            <div class="reply-preview-sender">${escapeHtml(data.replyTo.username)}</div>
+                            <div class="reply-preview-text">${escapeHtml(data.replyTo.text)}</div>
+                        </div>
+                    `;
+                }
+                
                 messageDiv.innerHTML = `
                     <div class="message-sender">${data.username}</div>
                     <div class="message-bubble">
+                        ${replyHtml}
                         ${escapeHtml(data.text)}
                         <div class="message-time">${time}</div>
+                        ${data.username !== username ? '<div class="reply-btn" onclick="replyToMessage(\'' + data.id + '\', \'' + escapeHtml(data.username) + '\', \'' + escapeHtml(data.text) + '\')">&crarr; Balas</div>' : ''}
                     </div>
                 `;
                 
@@ -884,6 +896,34 @@
             
             // Auto scroll ke bawah
             chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        // Reply to message
+        function replyToMessage(messageId, senderUsername, messageText) {
+            replyingTo = {
+                id: messageId,
+                username: senderUsername,
+                text: messageText
+            };
+            
+            // Show reply preview
+            const replyPreview = document.getElementById('replyPreview');
+            const replyUsername = document.getElementById('replyUsername');
+            const replyText = document.getElementById('replyText');
+            
+            replyUsername.textContent = senderUsername;
+            replyText.textContent = messageText;
+            replyPreview.classList.add('show');
+            
+            // Focus on input
+            document.getElementById('messageInput').focus();
+        }
+        
+        // Cancel reply
+        function cancelReply() {
+            replyingTo = null;
+            const replyPreview = document.getElementById('replyPreview');
+            replyPreview.classList.remove('show');
         }
 
         // Escape HTML untuk keamanan
