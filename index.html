@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MQTT Chat Realtime</title>
+    <title>Anonymous Pens psdku LA Chat Realtime</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
         * {
@@ -48,12 +48,35 @@
             margin-bottom: 5px;
         }
 
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
         .status {
             font-size: 12px;
             display: flex;
             align-items: center;
-            justify-content: center;
             gap: 5px;
+        }
+
+        .online-users {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            padding: 5px 10px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            transition: background 0.3s;
+        }
+
+        .online-users:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .status-dot {
@@ -268,6 +291,119 @@
             transform: translateY(-2px);
         }
 
+        /* Modal User List */
+        .user-list-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .user-list-modal.show {
+            display: flex;
+        }
+
+        .user-list-content {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 90%;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .user-list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .user-list-header h3 {
+            color: #333;
+            font-size: 20px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.3s;
+        }
+
+        .close-btn:hover {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: background 0.3s;
+        }
+
+        .user-item:hover {
+            background: #e9ecef;
+        }
+
+        .user-item.current-user {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 2px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .user-info {
+            flex: 1;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .user-badge {
+            font-size: 11px;
+            color: #667eea;
+            font-weight: 600;
+        }
+
         .system-message {
             text-align: center;
             color: #999;
@@ -307,10 +443,17 @@
     <!-- Container Chat -->
     <div class="container">
         <div class="header">
-            <h1>💬 MQTT Chat</h1>
-            <div class="status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Menghubungkan...</span>
+            <h1>Anonymous PENS PSDKU LA Chat</h1>
+            <div class="header-info">
+                <div class="status">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Menghubungkan...</span>
+                </div>
+                <div class="online-users" onclick="showUserList()">
+                    <span>👥</span>
+                    <span id="userCount">0</span>
+                    <span>online</span>
+                </div>
             </div>
         </div>
 
@@ -324,13 +467,27 @@
         </div>
     </div>
 
+    <!-- Modal User List -->
+    <div id="userListModal" class="user-list-modal" onclick="closeUserList(event)">
+        <div class="user-list-content" onclick="event.stopPropagation()">
+            <div class="user-list-header">
+                <h3>Pengguna Online</h3>
+                <button class="close-btn" onclick="closeUserList()">&times;</button>
+            </div>
+            <div id="userListContainer"></div>
+        </div>
+    </div>
+
     <script>
         // Konfigurasi MQTT
         const BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
         const TOPIC = 'chat/realtime/app';
+        const PRESENCE_TOPIC = 'chat/realtime/app/presence';
         
         let client;
         let username = '';
+        let onlineUsers = new Map(); // Menyimpan daftar user online
+        let heartbeatInterval;
 
         // Cek username di localStorage
         window.onload = function() {
@@ -378,13 +535,16 @@
                 console.log('Terhubung ke MQTT Broker');
                 updateStatus('Terhubung', true);
                 
-                // Subscribe ke topic
-                client.subscribe(TOPIC, function(err) {
+                // Subscribe ke topic chat dan presence
+                client.subscribe([TOPIC, PRESENCE_TOPIC], function(err) {
                     if (!err) {
-                        console.log('Subscribe ke topic:', TOPIC);
+                        console.log('Subscribe ke topics');
                         document.getElementById('messageInput').disabled = false;
                         document.getElementById('sendBtn').disabled = false;
                         document.getElementById('messageInput').focus();
+                        
+                        // Announce kehadiran
+                        announcePresence('join');
                         
                         // Kirim notifikasi join
                         const joinMessage = {
@@ -394,6 +554,16 @@
                             timestamp: new Date().toISOString()
                         };
                         client.publish(TOPIC, JSON.stringify(joinMessage));
+
+                        // Heartbeat setiap 5 detik
+                        heartbeatInterval = setInterval(() => {
+                            announcePresence('heartbeat');
+                        }, 5000);
+
+                        // Request user list
+                        setTimeout(() => {
+                            announcePresence('request');
+                        }, 500);
                     }
                 });
             });
@@ -401,7 +571,12 @@
             client.on('message', function(topic, message) {
                 try {
                     const data = JSON.parse(message.toString());
-                    displayMessage(data);
+                    
+                    if (topic === PRESENCE_TOPIC) {
+                        handlePresence(data);
+                    } else {
+                        displayMessage(data);
+                    }
                 } catch (e) {
                     console.error('Error parsing message:', e);
                 }
@@ -414,11 +589,103 @@
 
             client.on('offline', function() {
                 updateStatus('Offline', false);
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                }
             });
 
             client.on('reconnect', function() {
                 updateStatus('Menyambung ulang...', false);
             });
+        }
+
+        // Announce presence
+        function announcePresence(type) {
+            if (!client || !client.connected) return;
+            
+            const presence = {
+                type: type, // 'join', 'leave', 'heartbeat', 'request'
+                username: username,
+                timestamp: new Date().toISOString()
+            };
+            
+            client.publish(PRESENCE_TOPIC, JSON.stringify(presence), { qos: 0 });
+        }
+
+        // Handle presence messages
+        function handlePresence(data) {
+            const now = Date.now();
+            
+            if (data.type === 'join' || data.type === 'heartbeat') {
+                onlineUsers.set(data.username, now);
+                updateUserCount();
+            } else if (data.type === 'leave') {
+                onlineUsers.delete(data.username);
+                updateUserCount();
+            } else if (data.type === 'request' && data.username !== username) {
+                // Respond to presence request
+                announcePresence('heartbeat');
+            }
+            
+            // Cleanup users yang tidak aktif (lebih dari 15 detik)
+            for (let [user, lastSeen] of onlineUsers.entries()) {
+                if (now - lastSeen > 15000) {
+                    onlineUsers.delete(user);
+                }
+            }
+            updateUserCount();
+        }
+
+        // Update user count display
+        function updateUserCount() {
+            const count = onlineUsers.size;
+            document.getElementById('userCount').textContent = count;
+        }
+
+        // Show user list modal
+        function showUserList() {
+            const modal = document.getElementById('userListModal');
+            const container = document.getElementById('userListContainer');
+            
+            container.innerHTML = '';
+            
+            if (onlineUsers.size === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">Tidak ada pengguna online</div>';
+            } else {
+                // Sort users, current user first
+                const sortedUsers = Array.from(onlineUsers.keys()).sort((a, b) => {
+                    if (a === username) return -1;
+                    if (b === username) return 1;
+                    return a.localeCompare(b);
+                });
+                
+                sortedUsers.forEach(user => {
+                    const userItem = document.createElement('div');
+                    userItem.className = user === username ? 'user-item current-user' : 'user-item';
+                    
+                    const initial = user.charAt(0).toUpperCase();
+                    const badge = user === username ? '<div class="user-badge">Anda</div>' : '';
+                    
+                    userItem.innerHTML = `
+                        <div class="user-avatar">${initial}</div>
+                        <div class="user-info">
+                            <div class="user-name">${escapeHtml(user)}</div>
+                            ${badge}
+                        </div>
+                    `;
+                    
+                    container.appendChild(userItem);
+                });
+            }
+            
+            modal.classList.add('show');
+        }
+
+        // Close user list modal
+        function closeUserList(event) {
+            if (!event || event.target.id === 'userListModal') {
+                document.getElementById('userListModal').classList.remove('show');
+            }
         }
 
         // Update status koneksi
@@ -506,6 +773,8 @@
         // Cleanup saat window ditutup
         window.onbeforeunload = function() {
             if (client && client.connected) {
+                announcePresence('leave');
+                
                 const leaveMessage = {
                     type: 'system',
                     username: username,
@@ -513,6 +782,10 @@
                     timestamp: new Date().toISOString()
                 };
                 client.publish(TOPIC, JSON.stringify(leaveMessage));
+                
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                }
             }
         };
     </script>
