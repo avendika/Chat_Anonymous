@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anonymous Pens psdku LA Chat Realtime</title>
+    <title>MQTT Chat Realtime</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
         * {
@@ -179,10 +179,116 @@
             margin-top: 5px;
         }
 
+        .reply-preview {
+            padding: 8px 12px;
+            background: #f0f0f0;
+            border-left: 3px solid #667eea;
+            border-radius: 5px;
+            margin-top: 5px;
+            font-size: 12px;
+        }
+
+        .reply-preview-sender {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 3px;
+        }
+
+        .reply-preview-text {
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .message.own .reply-preview {
+            background: rgba(255, 255, 255, 0.3);
+            border-left-color: white;
+        }
+
+        .message.own .reply-preview-sender,
+        .message.own .reply-preview-text {
+            color: white;
+        }
+
+        .reply-btn {
+            font-size: 10px;
+            color: #667eea;
+            cursor: pointer;
+            margin-top: 5px;
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 10px;
+            transition: background 0.3s;
+        }
+
+        .reply-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .message.own .reply-btn {
+            color: white;
+        }
+
+        .message.own .reply-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
         .input-area {
-            padding: 20px;
             background: white;
             border-top: 1px solid #e0e0e0;
+        }
+
+        .reply-input-preview {
+            display: none;
+            padding: 12px 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .reply-input-preview.show {
+            display: flex;
+        }
+
+        .reply-input-info {
+            flex: 1;
+        }
+
+        .reply-input-label {
+            font-size: 11px;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .reply-input-text {
+            font-size: 13px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .cancel-reply-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #999;
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 50%;
+            transition: background 0.3s;
+        }
+
+        .cancel-reply-btn:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .input-controls {
+            padding: 20px;
             display: flex;
             gap: 10px;
         }
@@ -443,7 +549,7 @@
     <!-- Container Chat -->
     <div class="container">
         <div class="header">
-            <h1>Anonymous PENS PSDKU LA Chat</h1>
+            <h1>💬 MQTT Chat</h1>
             <div class="header-info">
                 <div class="status">
                     <span class="status-dot" id="statusDot"></span>
@@ -462,8 +568,17 @@
         </div>
 
         <div class="input-area">
-            <input type="text" id="messageInput" placeholder="Ketik pesan..." disabled>
-            <button id="sendBtn" onclick="sendMessage()" disabled>Kirim</button>
+            <div class="reply-input-preview" id="replyPreview">
+                <div class="reply-input-info">
+                    <div class="reply-input-label">Membalas pesan dari <span id="replyUsername"></span></div>
+                    <div class="reply-input-text" id="replyText"></div>
+                </div>
+                <button class="cancel-reply-btn" onclick="cancelReply()">&times;</button>
+            </div>
+            <div class="input-controls">
+                <input type="text" id="messageInput" placeholder="Ketik pesan..." disabled>
+                <button id="sendBtn" onclick="sendMessage()" disabled>Kirim</button>
+            </div>
         </div>
     </div>
 
@@ -488,6 +603,8 @@
         let username = '';
         let onlineUsers = new Map(); // Menyimpan daftar user online
         let heartbeatInterval;
+        let replyingTo = null; // Menyimpan data pesan yang sedang di-reply
+        let messageId = 0; // Counter untuk ID pesan unik
 
         // Cek username di localStorage
         window.onload = function() {
@@ -708,14 +825,25 @@
             
             const message = {
                 type: 'chat',
+                id: `msg_${Date.now()}_${messageId++}`,
                 username: username,
                 text: text,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                replyTo: replyingTo ? {
+                    id: replyingTo.id,
+                    username: replyingTo.username,
+                    text: replyingTo.text
+                } : null
             };
             
             client.publish(TOPIC, JSON.stringify(message));
             input.value = '';
             input.focus();
+            
+            // Reset reply
+            if (replyingTo) {
+                cancelReply();
+            }
         }
 
         // Enter key untuk kirim pesan
